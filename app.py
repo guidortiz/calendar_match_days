@@ -200,4 +200,15 @@ def main():
                 # Construcción del HTML interno de la celda
                 html_events = ""
                 for e in events:
-                    html_events += f"<div
+                    html_events += f"<div class='event-capsule {e['class']}'>{e['text']}</div>"
+                
+                cell_html = f"""
+                <div class='day-cell'>
+                    <div class='day-number'>{day}</div>
+                    {html_events}
+                </div>
+                """
+                cols[i].markdown(cell_html, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
