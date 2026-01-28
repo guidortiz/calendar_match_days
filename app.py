@@ -11,27 +11,25 @@ st.set_page_config(page_title="Calendario Logística | Adidas", layout="wide", p
 # --- ESTILOS CSS (DISEÑO MATRIZ PROFESIONAL) ---
 st.markdown("""
     <style>
-    /* Estilos generales */
     .block-container { padding-top: 2rem; }
     
-    /* Estilo de la Tarjeta del Día (La celda de la matriz) */
+    /* Estilo de la celda del calendario */
     .day-cell {
-        border: 1px solid #d1d1d1; /* Borde gris consolidado */
+        border: 1px solid #d1d1d1;
         background-color: white;
-        height: 140px; /* Altura fija para que todos sean iguales */
+        height: 140px;
         padding: 8px;
-        border-radius: 4px; /* Bordes levemente redondeados */
+        border-radius: 4px;
         position: relative;
         transition: all 0.2s ease;
     }
     
     .day-cell:hover {
-        border-color: #000; /* Se oscurece el borde al pasar el mouse */
+        border-color: #000;
         box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         z-index: 10;
     }
 
-    /* Número del día */
     .day-number {
         font-size: 1.2rem;
         font-weight: 700;
@@ -53,9 +51,8 @@ st.markdown("""
         text-overflow: ellipsis;
     }
 
-    /* Encabezados de Días (Lunes, Martes...) */
     .header-cell {
-        background-color: #000; /* Negro Adidas */
+        background-color: #000;
         color: white;
         padding: 10px;
         text-align: center;
@@ -64,17 +61,16 @@ st.markdown("""
         margin-bottom: 5px;
     }
     
-    /* Colores Específicos */
-    .bg-match { background-color: #e63946; } /* Rojo */
-    .bg-restock { background-color: #2a9d8f; } /* Verde */
-    .day-empty { background-color: #f9f9f9; border: none; } /* Días de otro mes */
+    .bg-match { background-color: #e63946; }
+    .bg-restock { background-color: #2a9d8f; }
+    .day-empty { background-color: #f9f9f9; border: none; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- 1. DATOS ---
 def load_data():
     data = [
-        {"fecha": "2026-03-10", "equipo": "AFA (Selección)", "rival": "Brasil", "torneo": "Eliminatorias"},
+        {"fecha": "2026-03-10", "equipo": "AFA (Seleccion)", "rival": "Brasil", "torneo": "Eliminatorias"},
         {"fecha": "2026-03-15", "equipo": "Boca Juniors", "rival": "Racing", "torneo": "Liga"},
         {"fecha": "2026-03-22", "equipo": "River Plate", "rival": "Independiente", "torneo": "Liga"},
         {"fecha": "2026-02-15", "equipo": "River Plate", "rival": "Boca Juniors", "torneo": "Liga"},
@@ -83,29 +79,45 @@ def load_data():
     df['fecha'] = pd.to_datetime(df['fecha'])
     return df
 
-# --- 2. LÓGICA DE EVENTOS ---
+# --- 2. LÓGICA DE EVENTOS (FIX: Texto separado para Web y PDF) ---
 def get_events(date, df_partidos):
     events = []
     # Partido Hoy
     partido_hoy = df_partidos[df_partidos['fecha'] == date]
     for _, row in partido_hoy.iterrows():
-        events.append({"text": f"⚽ VS {row['rival']}", "type": "match", "class": "bg-match", "rgb": (230, 57, 70)})
+        events.append({
+            "text_web": f"⚽ VS {row['rival']}",       # CON emoji para la web
+            "text_pdf": f"VS {row['rival']}",          # SIN emoji para el PDF
+            "type": "match", 
+            "class": "bg-match", 
+            "rgb": (230, 57, 70)
+        })
     
     # Reposición (2 días antes)
     fecha_futura = date + timedelta(days=2)
     partido_futuro = df_partidos[df_partidos['fecha'] == fecha_futura]
     for _, row in partido_futuro.iterrows():
-        events.append({"text": f"📦 REPONER ({row['equipo']})", "type": "restock", "class": "bg-restock", "rgb": (42, 157, 143)})
+        events.append({
+            "text_web": f"📦 REPONER ({row['equipo']})", # CON emoji
+            "text_pdf": f"REPONER ({row['equipo']})",     # SIN emoji
+            "type": "restock", 
+            "class": "bg-restock", 
+            "rgb": (42, 157, 143)
+        })
         
     return events
 
-# --- 3. GENERADOR DE PDF (Manteniendo el que ya funciona) ---
+# --- 3. GENERADOR DE PDF (FIX: Codificación segura) ---
 def create_pdf(year, month, df_partidos):
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
+    
+    # Título (sin tildes para evitar problemas raros, o encodeado)
     month_name = calendar.month_name[month]
-    pdf.cell(0, 10, f"Planificacion Logistica - {month_name} {year}", ln=True, align='C')
+    title = f"Planificacion Logistica - {month_name} {year}"
+    # Truco para que acepte tildes si las hubiera
+    pdf.cell(0, 10, title.encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(5)
     
     cal = calendar.monthcalendar(year, month)
@@ -141,6 +153,7 @@ def create_pdf(year, month, df_partidos):
                         pdf.set_fill_color(220, 255, 220)
                         fill = True
                 pdf.cell(col_w, row_h, str(day), border=1, align='L', fill=fill)
+                
                 if events:
                     pdf.set_xy(current_x + 1, y_start + 5)
                     for event in events:
@@ -148,9 +161,16 @@ def create_pdf(year, month, df_partidos):
                         pdf.set_fill_color(r, g, b)
                         pdf.set_text_color(255, 255, 255)
                         pdf.set_font("Arial", 'B', 7)
-                        pdf.cell(col_w - 2, 5, event['text'], border=0, ln=1, align='C', fill=True)
+                        
+                        # USAMOS text_pdf (SIN EMOJIS) PARA EVITAR EL CRASH
+                        # Y forzamos codificación latin-1 para tildes
+                        safe_text = event['text_pdf'].encode('latin-1', 'replace').decode('latin-1')
+                        
+                        pdf.cell(col_w - 2, 5, safe_text, border=0, ln=1, align='C', fill=True)
                         pdf.set_text_color(0, 0, 0)
         pdf.set_xy(x_start, y_start + row_h)
+    
+    # Retornamos los bytes del PDF de forma segura
     return pdf.output(dest='S').encode('latin-1')
 
 # --- 4. INTERFAZ WEB PROFESIONAL ---
@@ -160,7 +180,7 @@ def main():
     df = load_data()
     
     with st.sidebar:
-        st.image("https://upload.wikimedia.org/wikipedia/commons/2/20/Adidas_Logo.svg", width=100)
+        # Logo genérico para evitar errores de carga
         st.header("Configuración")
         selected_year = st.number_input("Año", value=2026, step=1)
         selected_month_name = st.selectbox("Mes", list(calendar.month_name)[1:])
@@ -168,39 +188,38 @@ def main():
         st.divider()
         
         # Botón PDF
-        pdf_bytes = create_pdf(selected_year, selected_month, df)
-        b64 = base64.b64encode(pdf_bytes).decode()
-        href = f'<a href="data:application/octet-stream;base64,{b64}" download="Logistica_{selected_month_name}_{selected_year}.pdf" style="text-decoration:none;">'
-        href += f'<button style="width:100%; padding:10px; background-color:#333; color:white; border:none; border-radius:4px; cursor:pointer;">📥 DESCARGAR PDF</button></a>'
-        st.markdown(href, unsafe_allow_html=True)
+        try:
+            pdf_bytes = create_pdf(selected_year, selected_month, df)
+            b64 = base64.b64encode(pdf_bytes).decode()
+            href = f'<a href="data:application/octet-stream;base64,{b64}" download="Logistica_{selected_month_name}_{selected_year}.pdf" style="text-decoration:none;">'
+            href += f'<button style="width:100%; padding:10px; background-color:#333; color:white; border:none; border-radius:4px; cursor:pointer;">📥 DESCARGAR PDF</button></a>'
+            st.markdown(href, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error generando PDF: {e}")
 
     # --- MATRIZ DE CALENDARIO ---
     st.subheader(f"📅 Vista Mensual: {selected_month_name} {selected_year}")
     
-    # Encabezados de columnas (Lunes, Martes...)
     dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     cols = st.columns(7)
     for i, dia in enumerate(dias):
         cols[i].markdown(f"<div class='header-cell'>{dia}</div>", unsafe_allow_html=True)
     
-    # Filas del calendario
     cal = calendar.monthcalendar(selected_year, selected_month)
     
     for week in cal:
         cols = st.columns(7)
         for i, day in enumerate(week):
             if day == 0:
-                # Celda vacía
                 cols[i].markdown("<div class='day-cell day-empty'></div>", unsafe_allow_html=True)
             else:
-                # Celda con día
                 current_date = datetime(selected_year, selected_month, day)
                 events = get_events(current_date, df)
                 
-                # Construcción del HTML interno de la celda
                 html_events = ""
                 for e in events:
-                    html_events += f"<div class='event-capsule {e['class']}'>{e['text']}</div>"
+                    # USAMOS text_web (CON EMOJIS) PARA LA PANTALLA
+                    html_events += f"<div class='event-capsule {e['class']}'>{e['text_web']}</div>"
                 
                 cell_html = f"""
                 <div class='day-cell'>
