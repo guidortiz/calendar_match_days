@@ -4,6 +4,7 @@ import calendar
 from datetime import datetime, timedelta
 from fpdf import FPDF
 import base64
+import requests  # <--- NUEVA LIBRERÍA NECESARIA
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Calendario Logística | Adidas", layout="wide", page_icon="📅")
@@ -58,14 +59,61 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. DATOS ---
+# --- 1. DATOS (INTEGRACIÓN API) ---
 def load_data():
+    # A. Datos Manuales (Ej: Selección o eventos especiales fuera de la liga)
     data = [
         {"fecha": "2026-03-10", "equipo": "AFA (Seleccion)", "rival": "Brasil", "torneo": "Eliminatorias"},
-        {"fecha": "2026-03-15", "equipo": "Boca Juniors", "rival": "Racing", "torneo": "Liga"},
-        {"fecha": "2026-03-22", "equipo": "River Plate", "rival": "Independiente", "torneo": "Liga"},
-        {"fecha": "2026-02-15", "equipo": "River Plate", "rival": "Boca Juniors", "torneo": "Liga"},
     ]
+    
+    # B. Integración TheSportsDB API
+    # ID Liga Argentina: 4351
+    # API Key Test Gratuita: 3
+    api_key = "3" 
+    league_id = "4351"
+    season = "2026" # Ojo: Si la API aún no tiene el 2026 cargado, no traerá datos.
+    
+    url = f"https://www.thesportsdb.com/api/v1/json/{api_key}/eventsseason.php?id={league_id}&s={season}"
+    
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            result = response.json()
+            events = result.get('events') # Puede ser None si no hay datos
+            
+            if events:
+                target_teams = ["River Plate", "Boca Juniors"]
+                
+                for match in events:
+                    home_team = match.get('strHomeTeam', '')
+                    away_team = match.get('strAwayTeam', '')
+                    date_event = match.get('dateEvent', '')
+                    
+                    # Filtramos si juega River o Boca
+                    if home_team in target_teams or away_team in target_teams:
+                        
+                        # Definimos cual es "nuestro equipo" para mostrar primero
+                        if home_team in target_teams:
+                            equipo_principal = home_team
+                            rival = away_team
+                        else:
+                            equipo_principal = away_team
+                            rival = home_team
+                            
+                        # Agregamos a la lista de datos
+                        data.append({
+                            "fecha": date_event,
+                            "equipo": equipo_principal,
+                            "rival": rival,
+                            "torneo": "Liga Profesional"
+                        })
+            # Si 'events' es None, simplemente no agrega nada (sin error)
+    except Exception as e:
+        # Si falla la conexión, mostramos un aviso discreto en la consola/app pero cargamos lo manual
+        print(f"Error conectando a API: {e}")
+        st.toast("⚠️ No se pudo sincronizar con la API de deportes (verificar conexión o temporada).", icon="⚠️")
+
+    # C. Convertir a DataFrame
     df = pd.DataFrame(data)
     df['fecha'] = pd.to_datetime(df['fecha'])
     return df
